@@ -42,13 +42,13 @@ PitTimerSynced/
 └─ config.lua            # (optional) legacy client config; safe to keep
 ```
 
-> The resource folder name (e.g., `PT`) must match what you `ensure` in your server config.
+> The resource folder name (e.g., `PitTimerSynced`) must match what you `ensure` in your server config.
 
 ---
 
 ## 🚀 Installation
 
-1. Drag the folder (e.g., `PT`) into your server resources.
+1. Drag the folder (e.g., `PitTimerSynced`) into your server resources.
 2. Ensure order in `server.cfg`:
 
    ```cfg
@@ -59,7 +59,7 @@ PitTimerSynced/
 3. Start/Restart the resource and check the server console for:
 
    ```
-   [pt] **SERVER LOADED** resource=PT
+   [pt] **SERVER LOADED** resource=PitTimerSynced
    ```
 
 ---
@@ -256,4 +256,5 @@ ensure PT                # must match the resource folder name
   Change the `DrawText(0.5, 0.08)` Y value and/or `SetTextScale`.
 
 * **Does it require wasabi\_multijob?**
+
   No — it works with vanilla ESX. With wasabi, viewers include off-duty holders in the job menu.
