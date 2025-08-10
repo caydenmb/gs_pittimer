@@ -211,7 +211,7 @@ fx_version 'cerulean'
 game 'gta5'
 
 name 'PT'
-author 'Mr.kujo934'
+author 'Gingr Snaps'
 description 'On-screen PIT timer (police/sheriff)'
 
 client_scripts {
@@ -258,3 +258,4 @@ ensure PT                # must match the resource folder name
 * **Does it require wasabi\_multijob?**
 
   No — it works with vanilla ESX. With wasabi, viewers include off-duty holders in the job menu.
+
