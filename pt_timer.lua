@@ -1,11 +1,7 @@
--- pt_timer.lua — server-authoritative, single-loop HUD
--- Shows "PIT Timer" while running. When it hits 0, shows
--- "PIT Maneuver Authorized" until /stoppit clears it (or a new start).
-
 local RESOURCE = GetCurrentResourceName()
 local ESX = exports['es_extended']:getSharedObject()
 
-local DEBUG = true
+local DEBUG = false
 local function log(msg) if DEBUG then print(('[pt:client] %s'):format(msg)) end end
 
 AddEventHandler('onClientResourceStart', function(res)

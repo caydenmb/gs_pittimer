@@ -1,6 +1,3 @@
--- server.lua — PIT HUD broadcaster with wasabi_multijob, persistent "Authorized",
--- and auto-clear after 90s of authorization.
-
 print(('[pt] **SERVER LOADED** resource=%s'):format(GetCurrentResourceName()))
 
 -- ===== Config =====
