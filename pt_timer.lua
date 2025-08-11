@@ -1,17 +1,26 @@
-local RESOURCE = GetCurrentResourceName()
+-- pt_timer.lua — optimized, event-driven HUD
 local ESX = exports['es_extended']:getSharedObject()
 
-local DEBUG = false
+-- ===== Tunables for resource usage =====
+local DEBUG           = false       -- set true if you need F8 logs
+local JOB_POLL_MS     = 5000        -- how often to re-check wasabi jobs when idle
+local IDLE_SLEEP_MS   = 250         -- draw loop sleep when HUD hidden
+local ACTIVE_SLEEP_MS = 0           -- draw loop sleep when HUD visible (per frame)
+
 local function log(msg) if DEBUG then print(('[pt:client] %s'):format(msg)) end end
 
-AddEventHandler('onClientResourceStart', function(res)
-    if res == RESOURCE then
-        log(('resource start: %s'):format(res))
-        log('Commands: /startpit /stoppit | tests: /pitcver /ptping')
+-- ===== Lightweight logging helpers =====
+local function safeRegisterEvent(name, cb)
+    local ok, err = pcall(RegisterNetEvent, name)
+    if ok then
+        AddEventHandler(name, cb)
+        log(('listening to optional event "%s"'):format(name))
+    else
+        -- ignore; event may not exist on this build
     end
-end)
+end
 
--- ==== Wasabi viewer detection (safe) ====
+-- ===== Viewer detection (ESX + wasabi) =====
 local function wasabiRunning()
     local st = GetResourceState and GetResourceState('wasabi_multijob') or 'missing'
     return st == 'started'
@@ -42,8 +51,7 @@ local function getWasabiJobs()
             else
                 for k, v in pairs(res) do
                     local name  = (type(k) == 'string' and k) or v.name or v.job
-                    local grade = v.grade or v.level or v.rank
-                    if name then out[#out+1] = { name = name, grade = grade } end
+                    if name then out[#out+1] = { name = name, grade = v.grade or v.level or v.rank } end
                 end
             end
             if #out > 0 then return out end
@@ -52,7 +60,8 @@ local function getWasabiJobs()
     return nil
 end
 
-local function isViewerNow()
+local function holdsViewerJobNow()
+    -- Prefer wasabi (off-duty holders still count)
     local wjobs = getWasabiJobs()
     if wjobs then
         for _, j in ipairs(wjobs) do
@@ -62,50 +71,81 @@ local function isViewerNow()
         end
         return false
     end
+    -- Fallback: ESX active job
     local x = ESX.GetPlayerData()
     local j = x and x.job
     return (j and (j.name == 'police' or j.name == 'sheriff')) or false
 end
 
--- ==== HUD state (single loop via timerSeq) ====
-local viewer = false
-local running, remaining, authorizedText = false, 0, false
-local timerSeq = 0  -- bump to cancel older loops
+-- ===== HUD state (single countdown; seq cancels old loops) =====
+local viewer           = false   -- can this client see HUD?
+local running          = false
+local remaining        = 0
+local authorizedText   = false
+local timerSeq         = 0       -- bump on any start/stop/authorized
 
--- Bootstrap viewer + keep it fresh (wasabi menu can change)
+-- Draw helpers (avoid repeat allocations inside the loop)
+local function drawCenteredText(text, scale, r,g,b,a, x, y)
+    SetTextFont(4)
+    SetTextProportional(1)
+    SetTextScale(scale, scale)
+    SetTextColour(r, g, b, a)
+    SetTextOutline()
+    SetTextCentre(true)
+    SetTextEntry("STRING")
+    AddTextComponentString(text)
+    DrawText(x, y)
+end
+
+-- ===== Bootstrap & viewer refresh (low frequency) =====
 CreateThread(function()
-    log('waiting for ESX job...')
     while ESX.GetPlayerData().job == nil do Wait(100) end
-    viewer = isViewerNow()
-    log(('viewer initial -> %s'):format(tostring(viewer)))
+    viewer = holdsViewerJobNow()
     TriggerServerEvent('pt:requestState')
-    while true do
-        local v = isViewerNow()
-        if v ~= viewer then
-            viewer = v
-            log(('viewer change -> %s'):format(tostring(viewer)))
+
+    -- React instantly to ESX job changes
+    AddEventHandler('esx:setJob', function()
+        local newViewer = holdsViewerJobNow()
+        if newViewer ~= viewer then
+            viewer = newViewer
             TriggerServerEvent('pt:requestState')
         end
-        Wait(2000)
+    end)
+
+    -- Optional: listen to some likely wasabi events if present (no-ops if missing)
+    safeRegisterEvent('wasabi_multijob:jobsUpdated', function()
+        local newViewer = holdsViewerJobNow()
+        if newViewer ~= viewer then
+            viewer = newViewer
+            TriggerServerEvent('pt:requestState')
+        end
+    end)
+    safeRegisterEvent('wasabi_multijob:clockedIn', function() TriggerServerEvent('pt:requestState') end)
+    safeRegisterEvent('wasabi_multijob:clockedOut', function() TriggerServerEvent('pt:requestState') end)
+
+    -- Fallback polling (cheap, every few seconds)
+    while true do
+        Wait(JOB_POLL_MS)
+        local newViewer = holdsViewerJobNow()
+        if newViewer ~= viewer then
+            viewer = newViewer
+            TriggerServerEvent('pt:requestState')
+        end
     end
 end)
 
--- Version
-RegisterCommand('pitcver', function() log('client alive; v1.8.0 (authorized persists)') end, false)
+-- ===== Commands =====
+RegisterCommand('pitcver', function() if DEBUG then print('client v2.0.0 (optimized)') end end, false)
 
--- Ping
-RegisterNetEvent('pt:pong', function()
-    log('PONG (server responded).')
-    TriggerEvent('chat:addMessage', { args = { '^2[PIT Timer]', 'PONG (server responded)' } })
-end)
 RegisterCommand('ptping', function()
-    log('sending PING')
     TriggerServerEvent('ptping')
 end, false)
 
--- Commands: server-authoritative start; local stop clears immediately
+RegisterNetEvent('pt:pong', function()
+    if DEBUG then print('[pt:client] PONG (server responded)') end
+end)
+
 RegisterCommand('startpit', function()
-    log('cmd /startpit -> pt:serverStart')
     if not viewer then
         TriggerEvent('chat:addMessage', { args = { '^1[PIT Timer]', 'You are not police or sheriff.' } })
         return
@@ -114,7 +154,6 @@ RegisterCommand('startpit', function()
 end, false)
 
 RegisterCommand('stoppit', function()
-    log('cmd /stoppit -> local clear + pt:serverStop')
     timerSeq = timerSeq + 1
     running=false; authorizedText=false; remaining=0
     TriggerServerEvent('pt:serverStop')
@@ -122,27 +161,30 @@ end, false)
 
 -- ===== Server -> Client =====
 RegisterNetEvent('pt:clientStart', function(duration)
-    log(('recv pt:clientStart %s (viewer=%s)'):format(tostring(duration), tostring(viewer)))
     if not viewer then return end
     timerSeq = timerSeq + 1
     local mySeq = timerSeq
-    running=true; authorizedText=false; remaining=math.max(0, tonumber(duration) or 0)
+    running = true
+    authorizedText = false
+    remaining = math.max(0, tonumber(duration) or 0)
+
+    -- Countdown using real time deltas (more precise, fewer wakes if we ever change)
+    local nextTick = GetGameTimer() + 1000
     CreateThread(function()
-        while timerSeq == mySeq and running and remaining>0 do
-            Wait(1000)
-            remaining = remaining - 1
+        while timerSeq == mySeq and running and remaining > 0 do
+            local now = GetGameTimer()
+            if now >= nextTick then
+                remaining = remaining - 1
+                nextTick = nextTick + 1000
+            else
+                Wait(50)
+            end
         end
-        if timerSeq == mySeq and running and remaining<=0 then
-            -- We let the SERVER tell us it's authorized to persist (next event),
-            -- so we don't flip here. Running will be reset by server's authorized broadcast.
-            log('local loop reached zero; awaiting server authorization event')
-        end
+        -- Do NOT flip to authorized here; the server will broadcast pt:clientAuthorized
     end)
 end)
 
--- Natural expiry sync from server: keep "PIT Maneuver Authorized" until /stoppit
 RegisterNetEvent('pt:clientAuthorized', function()
-    log('recv pt:clientAuthorized')
     timerSeq = timerSeq + 1
     running = false
     authorizedText = true
@@ -150,30 +192,27 @@ RegisterNetEvent('pt:clientAuthorized', function()
 end)
 
 RegisterNetEvent('pt:clientStop', function()
-    log('recv pt:clientStop')
     timerSeq = timerSeq + 1
     running=false; authorizedText=false; remaining=0
 end)
 
--- ===== Draw loop (upper middle) =====
+-- ===== Adaptive render loop =====
 CreateThread(function()
     while true do
-        Wait(0)
-        if viewer then
-            if running and remaining>0 then
-                local m = math.floor(remaining/60)
-                local s = remaining%60
-                local t = string.format("%02d:%02d", m, s)
-                SetTextFont(4); SetTextProportional(1); SetTextScale(0.7,0.7)
-                SetTextColour(255,255,255,255); SetTextOutline(); SetTextCentre(true)
-                SetTextEntry("STRING"); AddTextComponentString("PIT Timer: "..t) -- <== label updated
-                DrawText(0.5, 0.08)
+        local active = viewer and (running and remaining > 0 or authorizedText)
+        if active then
+            -- tight loop only while actually drawing
+            if running and remaining > 0 then
+                local m = math.floor(remaining / 60)
+                local s = remaining % 60
+                drawCenteredText(("PIT Timer: %02d:%02d"):format(m, s), 0.7, 255,255,255,255, 0.5, 0.08)
             elseif authorizedText then
-                SetTextFont(4); SetTextProportional(1); SetTextScale(0.7,0.7)
-                SetTextColour(0,255,0,255); SetTextOutline(); SetTextCentre(true)
-                SetTextEntry("STRING"); AddTextComponentString("PIT Maneuver Authorized")
-                DrawText(0.5, 0.08)
+                drawCenteredText("PIT Maneuver Authorized", 0.7, 0,255,0,255, 0.5, 0.08)
             end
+            Wait(ACTIVE_SLEEP_MS) -- per-frame while HUD visible
+        else
+            -- sleep when nothing to draw
+            Wait(IDLE_SLEEP_MS)
         end
     end
 end)
