@@ -1,25 +1,20 @@
-lua54 "yes" -- needed for Reaper
-
-shared_script "@ReaperV4/bypass.lua"
 lua54 "yes"
-
 fx_version 'cerulean'
 game 'gta5'
 
 name 'PT'
-author 'Gingr Snaps'
-description 'On-screen PIT timer (police/sheriff)'
+author 'Mr.kujo934'
+description 'On-screen PIT timer (police/sheriff, clocked-in only, optimized)'
 
 client_scripts {
-    'config.lua',
+    'config.lua',     -- optional legacy file; safe to remove if unused
     'pt_timer.lua'
 }
 
--- IMPORTANT: keep this exact filename path
 server_scripts {
     'server.lua'
 }
 
 dependencies {
-    'es_extended'
+    'es_extended'     -- ESX is required
 }

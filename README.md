@@ -1,74 +1,86 @@
-# PIT Timer for FiveM
+# PIT Timer (FiveM)
 
-A lightweight, **optimized** FiveM resource for managing PIT maneuver timers for **Police** and **Sheriff** roles.
-Shows a countdown to all authorized viewers, automatically switches to **"PIT Maneuver Authorized"** when time runs out, and clears itself after 90 seconds.
-
----
-
-## 📦 Features
-
-* **Two-way sync** – all eligible players see the same timer.
-* **Role + grade restrictions** (police 3–8, sheriff 3–6 by default).
-* Works with **ESX** and **wasabi\_multijob** (off-duty still counts).
-* **Optimized for performance** – minimal CPU usage when idle.
-* `/startpit` and `/stoppit` commands.
-* Auto-switch to `"PIT Maneuver Authorized"` when time expires.
-* Auto-clear after 90 seconds if forgotten.
-* Simple config for customization.
+A lightweight **shared countdown timer** for authorized PIT maneuvers in **ESX-based police roleplay** servers.
+Only **on-duty police and sheriff** can see the timer, and only specific ranks can start/stop it.
 
 ---
 
-## ⚙️ Customization
+## 🚓 Features
 
-In **`pt_timer.lua` (client)**:
+* **Shared countdown** — everyone on-duty sees the same timer.
+* **Role & rank restrictions** — only certain grades of police/sheriff can start/stop.
+* **HUD display** —
 
-```lua
-DEBUG           = false   -- Client debug logs
-JOB_POLL_MS     = 10000    -- How often to re-check jobs (ms)
-IDLE_SLEEP_MS   = 500     -- Sleep when HUD hidden
-ACTIVE_SLEEP_MS = 0       -- Sleep when HUD visible
-```
-
-In **`server.lua`**:
-
-```lua
-DEBUG_SERVER         = false   -- Server debug logs
-CONTROL_WINDOWS = {
-    police  = {min=3, max=8},  -- Allowed police grades
-    sheriff = {min=3, max=6},  -- Allowed sheriff grades
-}
-DEFAULT_DURATION      = 120    -- PIT timer length (seconds)
-AUTHORIZED_AUTO_CLEAR = 90     -- Time after "Authorized" to auto-stop (seconds)
-```
+  * Countdown format: `PIT Timer: mm:ss`
+  * After time runs out → shows **PIT Maneuver Authorized** for 90 seconds.
+  * Auto-clears after 90 seconds if not manually stopped.
+* **Clocked-in only** — requires being on-duty as `police` or `sheriff`.
+* **Lightweight & optimized** — sleeps when not active, minimal performance impact.
 
 ---
 
-## 📋 Commands
+## ⚙️ Commands
 
-| Command     | Description                               |
-| ----------- | ----------------------------------------- |
-| `/startpit` | Start the PIT timer (requires rank & job) |
-| `/stoppit`  | Stop the PIT timer early                  |
-| `/ptping`   | Test ping to server                       |
-| `/pittest`  | Local test of HUD (for debug only)        |
+| Command     | Description                                             |
+| ----------- | ------------------------------------------------------- |
+| `/startpit` | Starts the PIT countdown (restricted to allowed ranks). |
+| `/stoppit`  | Stops the PIT timer for everyone.                       |
+| `/ptping`   | (Optional) Tests connection to the server script.       |
 
 ---
 
-## 🚀 Installation
+## 🛠️ Installation
 
-1. Place the **PitTimerSynced** folder in your `resources` directory.
-2. Add to your **server.cfg**:
+1. **Download** or copy the resource folder to your FiveM server's `resources` directory.
+2. **Ensure dependencies are installed:**
 
-   ```
+   * ESX (any current build).
+3. Add the resource to your `server.cfg`:
+
+   ```cfg
    ensure PitTimerSynced
    ```
-3. Edit **`server.lua`** / **`pt_timer.lua`** to your desired settings.
-4. Restart the server.
+4. Restart your server or run:
+
+   ```
+   refresh
+   ensure PitTimerSynced
+   ```
 
 ---
 
-## 📝 Notes
+## 🔧 Customization
 
-* Supports both **ESX** and **wasabi\_multijob** without extra config.
-* Automatically handles server-client sync on join.
+Open **`server.lua`** and edit the **"EASY CUSTOMIZATION"** section:
 
+* **Control Ranks**:
+
+  ```lua
+  local CONTROL_WINDOWS = {
+      police  = { min = 3, max = 8 },  -- Allowed police ranks
+      sheriff = { min = 3, max = 6 },  -- Allowed sheriff ranks
+  }
+  ```
+* **Timer Duration**:
+
+  ```lua
+  local DEFAULT_DURATION = 120  -- seconds
+  ```
+* **Authorized Text Duration**:
+
+  ```lua
+  local AUTHORIZED_AUTO_CLEAR = 90  -- seconds after "Authorized" before auto-clear
+  ```
+
+Open **`pt_timer.lua`** for HUD tweaks:
+
+* Text position, size, and colors.
+* How often the job status is re-checked (`JOB_STATUS_POLL_MS`).
+
+---
+
+## 📋 Notes
+
+* Works with **ESX** and **wasabi\_multijob** for clocked-in detection.
+* Very low resource usage (event-driven design.)
+* Tested with police grades 3–8 and sheriff grades 3–6 by default.

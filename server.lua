@@ -1,19 +1,31 @@
--- server.lua — optimized watchdogs + optional logging
+---------------------------------------
+-- 0) DEBUG / LOGGING SWITCH
+---------------------------------------
 local DEBUG_SERVER = false
 local function slog(msg) if DEBUG_SERVER then print(('[pt] %s'):format(msg)) end end
 
+-- Loud banner so you know the server file loaded
 print(('[pt] **SERVER LOADED** resource=%s'):format(GetCurrentResourceName()))
 
--- ===== Config =====
+---------------------------------------
+-- 1) EASY CUSTOMIZATION (EDIT THESE)
+---------------------------------------
+-- Who can start/stop (by job & grade window)
 local CONTROL_WINDOWS = {
-    police  = {min=3, max=8},
-    sheriff = {min=3, max=6},
+    police  = { min = 3, max = 8 },   -- Sergeant .. Commissioner
+    sheriff = { min = 3, max = 6 },   -- Sergeant .. Commissioner
 }
-local VIEWABLE = { police=true, sheriff=true }
+
+-- How long the main countdown runs (in seconds)
 local DEFAULT_DURATION      = 120
+
+-- After countdown ends, how long to keep "PIT Maneuver Authorized" (seconds)
+-- before automatically clearing the HUD (as if /stoppit was issued)
 local AUTHORIZED_AUTO_CLEAR = 90
 
--- ===== ESX init =====
+---------------------------------------
+-- 2) ESX BOOTSTRAP
+---------------------------------------
 local ESX
 local function initESX()
     if ESX then return true end
@@ -22,79 +34,50 @@ local function initESX()
     TriggerEvent('esx:getSharedObject', function(o) ESX = o end)
     return ESX ~= nil
 end
+
 CreateThread(function()
-    for i=1,60 do if initESX() then break end Wait(250) end
-    print(ESX and '[pt] ESX ready' or '[pt] ESX NOT ready (we still run tests)')
+    for i = 1, 60 do if initESX() then break end Wait(250) end
+    print(ESX and '[pt] ESX ready' or '[pt] ESX NOT ready (ping still works)')
 end)
 
--- ===== wasabi helpers (safe) =====
-local function wasabiRunning()
-    local st = GetResourceState and GetResourceState('wasabi_multijob') or 'missing'
-    return st == 'started'
-end
-local function tryWasabiExport(fnName, src)
-    return pcall(function()
-        if src ~= nil then return exports['wasabi_multijob'][fnName](src) end
-        return exports['wasabi_multijob'][fnName]()
-    end)
-end
-local function getWasabiJobs(src)
-    if not wasabiRunning() then return nil end
-    local candidates = {'getPlayerJobs','GetPlayerJobs','getJobs','GetJobs','getAllJobs','GetAllJobs','getPlayerData','GetPlayerData'}
-    for _, fn in ipairs(candidates) do
-        local ok, res = tryWasabiExport(fn, src)
-        if ok and res and type(res) == 'table' then
-            local out = {}
-            if res[1] ~= nil then
-                for _, v in pairs(res) do
-                    out[#out+1] = { name = v.name or v.job or v.id or v[1], grade = v.grade or v.level or v.rank or v[2] }
-                end
-            else
-                for k, v in pairs(res) do
-                    local name  = (type(k) == 'string' and k) or v.name or v.job
-                    if name then out[#out+1] = { name = name, grade = v.grade or v.level or v.rank } end
-                end
-            end
-            if #out > 0 then return out end
-        end
-    end
-    return nil
-end
-local function getESXActiveJob(src)
+---------------------------------------
+-- 3) PERMISSION HELPERS (CLOCKED-IN ONLY)
+---------------------------------------
+local function getActiveJob(src)
     if not ESX then return nil end
-    local x = ESX.GetPlayerFromId(src)
-    if not x or not x.job then return nil end
-    return { { name = x.job.name, grade = x.job.grade } }
+    local xPlayer = ESX.GetPlayerFromId(src)
+    return xPlayer and xPlayer.job or nil
 end
-local function getAllPlayerJobs(src)
-    local jobs = getWasabiJobs(src)
-    if jobs then slog(('using WASABI jobs for %s'):format(src)) return jobs end
-    local ej = getESXActiveJob(src); slog(('using ESX active job for %s'):format(src))
-    return ej or {}
-end
-local function holdsViewerJob(src)
-    for _, j in ipairs(getAllPlayerJobs(src)) do if j and VIEWABLE[j.name] then return true end end
-    return false
-end
-local function holdsControllingJob(src)
-    for _, j in ipairs(getAllPlayerJobs(src)) do
-        local name = j and j.name
-        local g = tonumber(j and j.grade) or 0
-        local win = CONTROL_WINDOWS[name]
-        if win and g >= win.min and g <= win.max then return true, name, g end
-    end
-    return false, nil, nil
-end
-local function reply(src, msg) TriggerClientEvent('chat:addMessage', src, { args = { '^2[PIT Timer]', msg or '' } }) end
 
--- ===== State =====
-local running            = false
-local endsAt             = 0
-local authorizedActive   = false
-local authorizedEndsAt   = 0
+-- View = on-duty police/sheriff
+local function isViewer(src)
+    local j = getActiveJob(src)
+    return j and (j.name == 'police' or j.name == 'sheriff') or false
+end
+
+-- Control = on-duty + within grade window
+local function canControl(src)
+    local j = getActiveJob(src); if not j then return false end
+    local win = CONTROL_WINDOWS[j.name]; if not win then return false end
+    local g = tonumber(j.grade) or 0
+    return g >= win.min and g <= win.max
+end
+
+local function reply(src, msg)
+    TriggerClientEvent('chat:addMessage', src, { args = { '^2[PIT Timer]', msg or '' } })
+end
+
+---------------------------------------
+-- 4) AUTHORITATIVE STATE
+---------------------------------------
+local running            = false   -- true while countdown is ticking
+local endsAt             = 0       -- Unix epoch when countdown ends
+local authorizedActive   = false   -- true while showing "Authorized"
+local authorizedEndsAt   = 0       -- Unix epoch when to auto-clear
 
 local function remaining() return math.max(0, endsAt - os.time()) end
 
+-- Broadcast helpers
 local function bcastStart(seconds)
     seconds = math.max(0, math.floor(tonumber(seconds) or DEFAULT_DURATION))
     slog(('broadcast START -> %ds'):format(seconds))
@@ -109,45 +92,48 @@ local function bcastAuthorized()
     TriggerClientEvent('pt:clientAuthorized', -1)
 end
 
--- ===== Ping =====
+---------------------------------------
+-- 5) OPTIONAL PING (handy for diagnostics)
+---------------------------------------
 RegisterNetEvent('ptping', function()
-    local src = source
-    if DEBUG_SERVER then print(('[pt] ping from %s'):format(src)) end
-    TriggerClientEvent('pt:pong', src)
+    if DEBUG_SERVER then print(('[pt] ping from %s'):format(source)) end
+    TriggerClientEvent('pt:pong', source)
 end)
 
--- ===== Start / Stop =====
+---------------------------------------
+-- 6) START / STOP HANDLERS
+---------------------------------------
 RegisterNetEvent('pt:serverStart', function()
     local src = source
     slog(('serverStart from %s'):format(src))
 
     if not initESX() then
-        running=true; authorizedActive=false; endsAt=os.time()+DEFAULT_DURATION; authorizedEndsAt=0
+        -- ESX missing: allow testing
+        running = true; authorizedActive = false; endsAt = os.time() + DEFAULT_DURATION; authorizedEndsAt = 0
         TriggerClientEvent('pt:startAck', src, true, nil)
         return bcastStart(DEFAULT_DURATION)
     end
 
-    if not holdsViewerJob(src) then
-        TriggerClientEvent('pt:startAck', src, false, 'Must be police or sheriff to use.')
-        return reply(src, 'Must be police or sheriff to use.')
+    if not isViewer(src) then
+        TriggerClientEvent('pt:startAck', src, false, 'You must be clocked in as police or sheriff.')
+        return reply(src, 'You must be clocked in as police or sheriff.')
     end
 
-    local ok = holdsControllingJob(src)
-    if not ok then
-        local msg = 'Control requires police 3–8 or sheriff 3–6.'
+    if not canControl(src) then
+        local msg = 'Control requires (on-duty) police 3–8 or sheriff 3–6.'
         TriggerClientEvent('pt:startAck', src, false, msg)
         return reply(src, msg)
     end
 
     if running then
         TriggerClientEvent('pt:startAck', src, true, nil)
-        return bcastStart(remaining())
+        return bcastStart(remaining())  -- re-sync everyone
     end
 
-    running=true
-    authorizedActive=false
-    endsAt=os.time()+DEFAULT_DURATION
-    authorizedEndsAt=0
+    running = true
+    authorizedActive = false
+    endsAt = os.time() + DEFAULT_DURATION
+    authorizedEndsAt = 0
     TriggerClientEvent('pt:startAck', src, true, nil)
     bcastStart(DEFAULT_DURATION)
 end)
@@ -157,36 +143,40 @@ RegisterNetEvent('pt:serverStop', function()
     slog(('serverStop from %s'):format(src))
 
     if not initESX() then
-        running=false; authorizedActive=false; endsAt=0; authorizedEndsAt=0
+        running = false; authorizedActive = false; endsAt = 0; authorizedEndsAt = 0
         TriggerClientEvent('pt:stopAck', src, true, nil)
         return bcastStop()
     end
 
-    if not holdsViewerJob(src) then
-        TriggerClientEvent('pt:stopAck', src, false, 'Must be police or sheriff to use.')
-        return reply(src, 'Must be police or sheriff to use.')
+    if not isViewer(src) then
+        TriggerClientEvent('pt:stopAck', src, false, 'You must be clocked in as police or sheriff.')
+        return reply(src, 'You must be clocked in as police or sheriff.')
     end
 
-    local ok = holdsControllingJob(src)
-    if not ok then
-        local msg = 'Control requires police 3–8 or sheriff 3–6.'
+    if not canControl(src) then
+        local msg = 'Control requires (on-duty) police 3–8 or sheriff 3–6.'
         TriggerClientEvent('pt:stopAck', src, false, msg)
         return reply(src, msg)
     end
 
-    running=false
-    authorizedActive=false
-    endsAt=0
-    authorizedEndsAt=0
+    running = false
+    authorizedActive = false
+    endsAt = 0
+    authorizedEndsAt = 0
     TriggerClientEvent('pt:stopAck', src, true, nil)
     bcastStop()
 end)
 
--- ===== Sync =====
+---------------------------------------
+-- 7) STATE SYNC (for joiners / job changes)
+---------------------------------------
 RegisterNetEvent('pt:requestState', function()
     local src = source
     if not initESX() then return end
-    if not holdsViewerJob(src) then return TriggerClientEvent('pt:clientStop', src) end
+
+    if not isViewer(src) then
+        return TriggerClientEvent('pt:clientStop', src) -- ensure HUD is off
+    end
 
     if running then
         local r = remaining()
@@ -202,29 +192,27 @@ RegisterNetEvent('pt:requestState', function()
     TriggerClientEvent('pt:clientStop', src)
 end)
 
--- ===== Watchdog (1s tick) =====
+---------------------------------------
+-- 8) WATCHDOG (1s resolution: expiry & auto-clear)
+---------------------------------------
 CreateThread(function()
     while true do
-        Wait(1000) -- 1s resolution is enough for a seconds timer
+        Wait(1000)
         local now = os.time()
 
+        -- Countdown finished → switch to AUTHORIZED mode
         if running and now >= endsAt then
-            running=false
-            authorizedActive=true
+            running = false
+            authorizedActive = true
             authorizedEndsAt = now + AUTHORIZED_AUTO_CLEAR
             bcastAuthorized()
         end
 
+        -- AUTHORIZED long enough → auto-clear (like /stoppit)
         if authorizedActive and authorizedEndsAt > 0 and now >= authorizedEndsAt then
-            authorizedActive=false
-            authorizedEndsAt=0
+            authorizedActive = false
+            authorizedEndsAt = 0
             bcastStop()
         end
     end
 end)
-
--- ===== Server test =====
-RegisterCommand('pittestserver', function(src)
-    running=true; authorizedActive=false; endsAt=os.time()+15; authorizedEndsAt=0
-    bcastStart(15)
-end, true)
