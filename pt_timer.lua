@@ -3,8 +3,8 @@ local ESX = exports['es_extended']:getSharedObject()
 
 -- ===== Tunables for resource usage =====
 local DEBUG           = false       -- set true if you need F8 logs
-local JOB_POLL_MS     = 5000        -- how often to re-check wasabi jobs when idle
-local IDLE_SLEEP_MS   = 250         -- draw loop sleep when HUD hidden
+local JOB_POLL_MS     = 10000        -- how often to re-check wasabi jobs when idle
+local IDLE_SLEEP_MS   = 500         -- draw loop sleep when HUD hidden
 local ACTIVE_SLEEP_MS = 0           -- draw loop sleep when HUD visible (per frame)
 
 local function log(msg) if DEBUG then print(('[pt:client] %s'):format(msg)) end end
@@ -216,3 +216,4 @@ CreateThread(function()
         end
     end
 end)
+
