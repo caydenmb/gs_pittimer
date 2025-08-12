@@ -56,11 +56,11 @@ AUTHORIZED_AUTO_CLEAR = 90     -- Time after "Authorized" to auto-stop (seconds)
 
 ## 🚀 Installation
 
-1. Place the **PT** folder in your `resources` directory.
+1. Place the **PitTimerSynced** folder in your `resources` directory.
 2. Add to your **server.cfg**:
 
    ```
-   ensure PT
+   ensure PitTimerSynced
    ```
 3. Edit **`server.lua`** / **`pt_timer.lua`** to your desired settings.
 4. Restart the server.
@@ -71,3 +71,4 @@ AUTHORIZED_AUTO_CLEAR = 90     -- Time after "Authorized" to auto-stop (seconds)
 
 * Supports both **ESX** and **wasabi\_multijob** without extra config.
 * Automatically handles server-client sync on join.
+
