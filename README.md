@@ -1,86 +1,58 @@
-# PIT Timer (FiveM)
+# 🚓 PIT Timer (FiveM Script)
 
-A lightweight **shared countdown timer** for authorized PIT maneuvers in **ESX-based police roleplay** servers.
-Only **on-duty police and sheriff** can see the timer, and only specific ranks can start/stop it.
-
----
-
-## 🚓 Features
-
-* **Shared countdown** — everyone on-duty sees the same timer.
-* **Role & rank restrictions** — only certain grades of police/sheriff can start/stop.
-* **HUD display** —
-
-  * Countdown format: `PIT Timer: mm:ss`
-  * After time runs out → shows **PIT Maneuver Authorized** for 90 seconds.
-  * Auto-clears after 90 seconds if not manually stopped.
-* **Clocked-in only** — requires being on-duty as `police` or `sheriff`.
-* **Lightweight & optimized** — sleeps when not active, minimal performance impact.
+A lightweight, optimized **PIT Maneuver Timer** script for **FiveM** with full **wasabi\_multijob** integration.
+Only **police** and **sheriff** officers **who are clocked in** can start or see the timer.
 
 ---
 
-## ⚙️ Commands
+## ✨ Features
 
-| Command     | Description                                             |
-| ----------- | ------------------------------------------------------- |
-| `/startpit` | Starts the PIT countdown (restricted to allowed ranks). |
-| `/stoppit`  | Stops the PIT timer for everyone.                       |
-| `/ptping`   | (Optional) Tests connection to the server script.       |
+* **/startpit** – Starts a visible countdown for all on-duty Police & Sheriff officers.
+* **/stoppit** – Stops and removes the timer from all officers' screens.
+* **PIT Maneuver Authorized** message shows after countdown ends.
+* **Auto-close after 90 seconds** if not stopped manually.
+* **Job check every 5 minutes** – Ensures only on-duty police/sheriff see the timer.
+* Fully **optimized** for low resource usage.
 
 ---
 
-## 🛠️ Installation
+## 🔧 Customization (config.lua)
 
-1. **Download** or copy the resource folder to your FiveM server's `resources` directory.
-2. **Ensure dependencies are installed:**
+You can easily edit these settings:
 
-   * ESX (any current build).
-3. Add the resource to your `server.cfg`:
+* **Authorized jobs** (`police`, `sheriff`)
+* **Minimum job grade** allowed to start the timer
+* **Countdown time** in seconds
+* **Authorized duration** (how long “PIT Maneuver Authorized” stays on screen before auto-closing)
+* **Text labels and colors**
+* **Command names** for starting/stopping the timer
+
+---
+
+## 📦 Installation
+
+1. **Download & place** the script folder into your `resources` directory.
+2. Open your server.cfg and **add this line**:
 
    ```cfg
    ensure PitTimerSynced
    ```
-4. Restart your server or run:
-
-   ```
-   refresh
-   ensure PitTimerSynced
-   ```
+3. Make sure **wasabi\_multijob** is running before this script.
+4. Restart your server.
 
 ---
 
-## 🔧 Customization
+## 🕹 Commands
 
-Open **`server.lua`** and edit the **"EASY CUSTOMIZATION"** section:
-
-* **Control Ranks**:
-
-  ```lua
-  local CONTROL_WINDOWS = {
-      police  = { min = 3, max = 8 },  -- Allowed police ranks
-      sheriff = { min = 3, max = 6 },  -- Allowed sheriff ranks
-  }
-  ```
-* **Timer Duration**:
-
-  ```lua
-  local DEFAULT_DURATION = 120  -- seconds
-  ```
-* **Authorized Text Duration**:
-
-  ```lua
-  local AUTHORIZED_AUTO_CLEAR = 90  -- seconds after "Authorized" before auto-clear
-  ```
-
-Open **`pt_timer.lua`** for HUD tweaks:
-
-* Text position, size, and colors.
-* How often the job status is re-checked (`JOB_STATUS_POLL_MS`).
+| Command     | Description                                                   |
+| ----------- | ------------------------------------------------------------- |
+| `/startpit` | Starts PIT timer (Police/Sheriff only, on duty, correct rank) |
+| `/stoppit`  | Stops PIT timer for all officers                              |
 
 ---
 
-## 📋 Notes
+## 📝 Notes
 
-* Works with **ESX** and **wasabi\_multijob** for clocked-in detection.
-* Very low resource usage (event-driven design.)
-* Tested with police grades 3–8 and sheriff grades 3–6 by default.
+* This script uses **wasabi\_multijob** callbacks to check if you’re clocked in as Police or Sheriff.
+* The timer **will not show** to civilians or off-duty officers.
+* If you forget to stop the PIT timer, it **auto-closes after 90 seconds** of authorization.

@@ -1,20 +1,23 @@
-lua54 "yes"
+lua54 'yes'
 fx_version 'cerulean'
 game 'gta5'
 
 name 'PT'
-author 'Mr.kujo934'
-description 'On-screen PIT timer (police/sheriff, clocked-in only, optimized)'
+author 'Gingr Snaps'
+description 'On-screen PIT timer'
+
+-- Load config for both sides
+shared_script 'config.lua'
 
 client_scripts {
-    'config.lua',     -- optional legacy file; safe to remove if unused
-    'pt_timer.lua'
+  'pt_timer.lua'
 }
 
 server_scripts {
-    'server.lua'
+  'server.lua'
 }
 
 dependencies {
-    'es_extended'     -- ESX is required
+  'es_extended'
+  -- wasabi_multijob is strongly recommended; set hardRequire=true in config if you want it mandatory
 }
