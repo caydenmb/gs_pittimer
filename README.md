@@ -35,7 +35,7 @@ You can easily edit these settings:
 2. Open your server.cfg and **add this line**:
 
    ```cfg
-   ensure PitTimerSynced
+   ensure gs_pittimer
    ```
 3. Make sure **wasabi\_multijob** is running before this script.
 4. Restart your server.
@@ -55,4 +55,5 @@ You can easily edit these settings:
 
 * This script uses **wasabi\_multijob** callbacks to check if you’re clocked in as Police or Sheriff.
 * The timer **will not show** to civilians or off-duty officers.
+
 * If you forget to stop the PIT timer, it **auto-closes after 90 seconds** of authorization.
