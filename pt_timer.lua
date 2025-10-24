@@ -1,6 +1,3 @@
--- == PT Timer (Client) ==
--- Supports ESX (active job via wasabi) and Qbox (primary job + onduty).
-
 Config = Config or {}
 
 ---------------------------------------
@@ -16,9 +13,8 @@ local POLL_MS     = C.pollIntervalMs or 300000
 
 local CMD_START   = (Config.Commands and Config.Commands.start) or 'startpit'
 local CMD_STOP    = (Config.Commands and Config.Commands.stop ) or 'stoppit'
-local CMD_PING    = (Config.Commands and Config.Commands.ping ) or 'ptping'
 
--- Allow runtime debug via convar (client-side)
+-- Allow runtime debug via convar (client-side; harmless if not present)
 CreateThread(function()
   local cv = GetConvarInt and GetConvarInt('pt_debug', -1) or -1
   if cv == 1 then
@@ -50,7 +46,7 @@ end
 -- 1) FRAMEWORK ADAPTER (client)
 ---------------------------------------
 local ESX
-local QBCore -- if qb-core exists
+local QBCore -- if qb-core exists (some Qbox keep compat)
 
 -- Qbox cached state
 local qbx_primaryJob = nil
@@ -145,7 +141,7 @@ CreateThread(function()
       end
     end)
   else
-    -- Qbox duty + job updates
+    -- Qbox duty + job updates (QB-compatible events in many stacks)
     RegisterNetEvent('QBCore:Client:SetDuty', function(onDuty)
       qbx_onDuty = not not onDuty
       local newViewer = qboxIsViewerNow()
@@ -201,14 +197,6 @@ RegisterCommand(CMD_STOP, function()
   -- IMPORTANT: do NOT clear local state here; wait for server broadcast.
   TriggerServerEvent('pt:serverStop')
 end, false)
-
-RegisterCommand(CMD_PING, function()
-  TriggerServerEvent('ptping')
-end, false)
-
-RegisterNetEvent('pt:pong', function()
-  if DEBUG then print('[pt:client] PONG (server responded)') end
-end)
 
 ---------------------------------------
 -- 6) SERVER → CLIENT EVENTS

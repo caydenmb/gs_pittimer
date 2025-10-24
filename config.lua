@@ -2,9 +2,9 @@ Config = {}
 
 ---------------------------------------------------------------------
 -- 0) Framework & Multijob Selection
---    Core: 'esx' | 'qbox' | 'auto'  (auto = autodetect framework)
+--    Core: 'esx' | 'qbox' | 'auto'  (auto = prefer qbox if found)
 ---------------------------------------------------------------------
-Config.Core = 'qbox'
+Config.Core = 'auto'
 
 -- Integration knobs (we don't call these directly; we only enforce presence
 -- if you set hardRequire=true).
@@ -51,14 +51,13 @@ Config.Durations = {
 Config.Commands = {
   start = 'startpit',
   stop  = 'stoppit',
-  ping  = 'ptping',
 }
 
 ---------------------------------------------------------------------
 -- 4) Client HUD & Behavior
 ---------------------------------------------------------------------
 Config.Client = {
-  debug           = true,  -- F8 logging (can also toggle via convar: set pt_debug 1)
+  debug           = false,  -- F8 logging (can also toggle via convar: set pt_debug 1)
   idleSleepMs     = 1000,
   activeSleepMs   = 0,
   pollEnabled     = true,

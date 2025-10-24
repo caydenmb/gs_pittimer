@@ -122,7 +122,7 @@ end
 ---------------------------------------
 local function notify(src, msg)
   if GetResourceState('ox_lib') == 'started' then
-    -- If ox_lib client isn't present, this will no-op; still send chat fallback.
+    -- If ox_lib client isn't present, this will no-op; we still send chat fallback.
     TriggerClientEvent('ox_lib:notify', src, { type = 'error', description = msg })
   end
   TriggerClientEvent('chat:addMessage', src, { args = { '^2[PIT Timer]', msg } })
@@ -233,11 +233,6 @@ end
 ---------------------------------------
 -- 8) EVENTS
 ---------------------------------------
-RegisterNetEvent('ptping', function()
-  local src = source
-  if DEBUG_SERVER then print(('[pt] ping from %s'):format(src)) end
-  TriggerClientEvent('pt:pong', src)
-end)
 
 RegisterNetEvent('pt:serverStart', function()
   StartPITInternal(source)

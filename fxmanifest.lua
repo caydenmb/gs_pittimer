@@ -16,4 +16,4 @@ server_scripts {
   'server.lua'
 }
 
--- This resource detects ESX or Qbox at runtime.
+-- No hard dependencies. This resource detects ESX or Qbox at runtime.
