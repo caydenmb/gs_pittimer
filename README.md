@@ -1,4 +1,3 @@
-````markdown
 # PT – PIT Timer (ESX & Qbox)
 
 **What it does:** Simple on-screen PIT countdown for on-duty **police**.
@@ -83,4 +82,5 @@ exports.PT:StopPIT(source)
 
 * **No HUD?** Be **on-duty police** and confirm your framework is started.
 * **Can’t start?** Check grade window and any `hardRequire` multijob setting.
+
 * **Logs:** set `pt_debug 1` (or flip `Config.Client/Server.debug = true`) and run `/ptping`.
