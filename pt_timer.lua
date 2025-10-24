@@ -10,11 +10,16 @@ local IDLE_MS     = C.idleSleepMs or 1000
 local ACTIVE_MS   = C.activeSleepMs or 0
 local POLL_ON     = (C.pollEnabled ~= false)
 local POLL_MS     = C.pollIntervalMs or 300000
+local ALLOW_ADJ   = (C.allowHudAdjust == true)
 
 local CMD_START   = (Config.Commands and Config.Commands.start) or 'startpit'
 local CMD_STOP    = (Config.Commands and Config.Commands.stop ) or 'stoppit'
 
--- Allow runtime debug via convar (client-side; harmless if not present)
+-- Localized fallbacks for HUD copy (config wins if set)
+local LABEL_PREFIX    = HUD.labelPrefix or _L('hud_label_prefix')
+local AUTH_TEXT       = HUD.authorizedText or _L('hud_authorized_text')
+
+-- Allow runtime debug via convar (client-side)
 CreateThread(function()
   local cv = GetConvarInt and GetConvarInt('pt_debug', -1) or -1
   if cv == 1 then
@@ -46,7 +51,7 @@ end
 -- 1) FRAMEWORK ADAPTER (client)
 ---------------------------------------
 local ESX
-local QBCore -- if qb-core exists (some Qbox keep compat)
+local QBCore -- some Qbox stacks keep qb-core compat
 
 -- Qbox cached state
 local qbx_primaryJob = nil
@@ -73,6 +78,9 @@ end
 -- Qbox: primary job + onduty + grade
 local function qboxIsViewerNow()
   if not qbx_primaryJob then
+    if GetResourceState('qb-core') == 'started' then
+      QBCore = exports['qb-core']:GetCoreObject()
+    end
     if QBCore and QBCore.Functions and QBCore.Functions.GetPlayerData then
       local ok, pd = pcall(QBCore.Functions.GetPlayerData)
       if ok and type(pd) == 'table' and pd.job then
@@ -114,34 +122,16 @@ end
 ---------------------------------------
 CreateThread(function()
   -- Chat suggestions (cheap UX)
-  TriggerEvent('chat:addSuggestion', '/' .. CMD_START, 'Start the PIT timer')
-  TriggerEvent('chat:addSuggestion', '/' .. CMD_STOP,  'Stop the PIT timer')
+  TriggerEvent('chat:addSuggestion', '/' .. CMD_START, _L('cmd_start_desc'))
+  TriggerEvent('chat:addSuggestion', '/' .. CMD_STOP,  _L('cmd_stop_desc'))
 
   if CORE_MODE == 'esx' then
     initESX()
     while ESX and ESX.GetPlayerData().job == nil do Wait(100) end
     viewer = esxIsViewerNow()
   else
-    if GetResourceState('qb-core') == 'started' then
-      QBCore = exports['qb-core']:GetCoreObject()
-    end
     viewer = qboxIsViewerNow()
-  end
-
-  TriggerServerEvent('pt:requestState')
-
-  -- ESX job change
-  if CORE_MODE == 'esx' then
-    AddEventHandler('esx:setJob', function()
-      local newViewer = esxIsViewerNow()
-      if newViewer ~= viewer then
-        viewer = newViewer
-        TriggerServerEvent('pt:requestState')
-        log('esx:setJob -> resync')
-      end
-    end)
-  else
-    -- Qbox duty + job updates (QB-compatible events in many stacks)
+    -- Qbox event wires (QB-compatible)
     RegisterNetEvent('QBCore:Client:SetDuty', function(onDuty)
       qbx_onDuty = not not onDuty
       local newViewer = qboxIsViewerNow()
@@ -166,6 +156,20 @@ CreateThread(function()
     end)
   end
 
+  TriggerServerEvent('pt:requestState')
+
+  -- ESX job change
+  if CORE_MODE == 'esx' then
+    AddEventHandler('esx:setJob', function()
+      local newViewer = esxIsViewerNow()
+      if newViewer ~= viewer then
+        viewer = newViewer
+        TriggerServerEvent('pt:requestState')
+        log('esx:setJob -> resync')
+      end
+    end)
+  end
+
   -- Safety poll
   if POLL_ON then
     CreateThread(function()
@@ -183,14 +187,42 @@ CreateThread(function()
 end)
 
 ---------------------------------------
--- 5) COMMANDS (client → server)
+-- 5) OPTIONAL: Per-player HUD adjust with persistence
 ---------------------------------------
-RegisterCommand(CMD_START, function()
+if ALLOW_ADJ then
+  -- Load saved KVP once
+  CreateThread(function()
+    local x = GetResourceKvpString('pt_hud_x')
+    local y = GetResourceKvpString('pt_hud_y')
+    local s = GetResourceKvpString('pt_hud_scale')
+    if x then HUD.x = tonumber(x) or HUD.x end
+    if y then HUD.y = tonumber(y) or HUD.y end
+    if s then HUD.scale = tonumber(s) or HUD.scale end
+  end)
+
+  RegisterCommand('ptsetpos', function(_, args)
+    local x = tonumber(args[1]); local y = tonumber(args[2]); local sc = tonumber(args[3])
+    if x then HUD.x = math.max(0.0, math.min(1.0, x)) end
+    if y then HUD.y = math.max(0.0, math.min(1.0, y)) end
+    if sc then HUD.scale = math.max(0.3, math.min(1.5, sc)) end
+    SetResourceKvp('pt_hud_x', tostring(HUD.x))
+    SetResourceKvp('pt_hud_y', tostring(HUD.y))
+    SetResourceKvp('pt_hud_scale', tostring(HUD.scale))
+    TriggerEvent('chat:addMessage', { args = { '^2[PIT Timer]', _L('hud_set_msg', HUD.x, HUD.y, HUD.scale) } })
+  end, false)
+end
+
+---------------------------------------
+-- 6) COMMANDS (client → server)
+---------------------------------------
+RegisterCommand(CMD_START, function(_, args)
   if not viewer then
-    TriggerEvent('chat:addMessage', { args = { '^1[PIT Timer]', 'You must be on-duty as Police.' } })
+    TriggerEvent('chat:addMessage', { args = { '^1[PIT Timer]', _L('err_must_be_on_duty') } })
     return
   end
-  TriggerServerEvent('pt:serverStart')
+  -- Optional: admins can pass a custom duration; server decides if allowed
+  local sec = tonumber(args[1])
+  TriggerServerEvent('pt:serverStart', sec)
 end, false)
 
 RegisterCommand(CMD_STOP, function()
@@ -199,7 +231,7 @@ RegisterCommand(CMD_STOP, function()
 end, false)
 
 ---------------------------------------
--- 6) SERVER → CLIENT EVENTS
+-- 7) SERVER → CLIENT EVENTS
 ---------------------------------------
 RegisterNetEvent('pt:clientStart', function(duration)
   if not viewer then return end
@@ -239,7 +271,24 @@ RegisterNetEvent('pt:clientStop', function()
 end)
 
 ---------------------------------------
--- 7) RENDER LOOP
+-- 8) GLOBALSTATE MIRROR
+---------------------------------------
+AddStateBagChangeHandler('PT', nil, function(bagName, key, value)
+  if bagName ~= 'global' or type(value) ~= 'table' then return end
+  if not viewer then return end
+  -- Apply server-published state to local HUD
+  local now = GetGameTimer()
+  running        = value.running and (value.endsAtMs or 0) > now
+  authorizedText = value.authorized and (value.authorizedEndsMs or 0) > now
+  if running then
+    remaining = math.max(0, math.floor(((value.endsAtMs or now) - now) / 1000))
+  else
+    remaining = 0
+  end
+end)
+
+---------------------------------------
+-- 9) RENDER LOOP
 ---------------------------------------
 CreateThread(function()
   local cr = HUD.colorRunning    or {255,255,255,255}
@@ -251,12 +300,12 @@ CreateThread(function()
         local m = math.floor(remaining / 60)
         local s = remaining % 60
         drawCenteredText(
-          (tostring(HUD.labelPrefix or 'PIT Timer: '))..(("%02d:%02d"):format(m, s)),
+          (tostring(LABEL_PREFIX))..(("%02d:%02d"):format(m, s)),
           HUD.scale, cr[1],cr[2],cr[3],cr[4], HUD.x, HUD.y, HUD.font, HUD.outline, HUD.center
         )
       elseif authorizedText then
         drawCenteredText(
-          tostring(HUD.authorizedText or 'PIT Maneuver Authorized'),
+          tostring(AUTH_TEXT),
           HUD.scale, ca[1],ca[2],ca[3],ca[4], HUD.x, HUD.y, HUD.font, HUD.outline, HUD.center
         )
       end

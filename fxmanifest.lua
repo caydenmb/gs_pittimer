@@ -4,9 +4,13 @@ game 'gta5'
 
 name 'PT'
 author 'Gingr Snaps'
-description 'On-screen PIT timer with ESX + Qbox support'
+description 'On-screen PIT timer with ESX + Qbox support (police only)'
 
-shared_script 'config.lua'
+-- Load config + locales on both sides first
+shared_scripts {
+  'config.lua',
+  'locales/en.lua',        -- add more locales as needed (e.g., locales/es.lua)
+}
 
 client_scripts {
   'pt_timer.lua'
@@ -15,5 +19,3 @@ client_scripts {
 server_scripts {
   'server.lua'
 }
-
--- No hard dependencies. This resource detects ESX or Qbox at runtime.

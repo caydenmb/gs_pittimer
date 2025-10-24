@@ -5,6 +5,7 @@ Config = Config or {}
 ---------------------------------------
 local DEBUG_SERVER = (Config.Server and Config.Server.debug) or false
 local function slog(msg) if DEBUG_SERVER then print(('[pt] %s'):format(msg)) end end
+local function L(key, ...) return _L and _L(key, ...) or key end
 
 -- Toggle debug via convar without editing config
 do
@@ -18,6 +19,7 @@ end
 local CORE_MODE = (Config.Core or 'auto')
 local ESX_READY = GetResourceState('es_extended') == 'started'
 local QBOX_READY = GetResourceState('qbx_core') == 'started'
+local QB_FALLBACK = (GetResourceState('qb-core') == 'started') and not QBOX_READY
 
 if CORE_MODE == 'auto' then
   if QBOX_READY then CORE_MODE = 'qbox'
@@ -25,24 +27,41 @@ if CORE_MODE == 'auto' then
   else CORE_MODE = 'esx' end
 end
 
-print(('[pt] SERVER LOADED | core=%s esx=%s qbox=%s'):format(CORE_MODE, tostring(ESX_READY), tostring(QBOX_READY)))
+print(('[pt] SERVER LOADED | core=%s esx=%s qbox=%s qbcoreFallback=%s')
+  :format(CORE_MODE, tostring(ESX_READY), tostring(QBOX_READY), tostring(QB_FALLBACK)))
 
 ---------------------------------------
 -- 1) CONFIG SHORTHANDS
 ---------------------------------------
-local CONTROL_WINDOWS = Config.ControlWindows or { police = { min = 3, max = 8 } }
-local D_COUNTDOWN     = (Config.Durations and Config.Durations.countdown)  or 120
-local D_AUTH          = (Config.Durations and Config.Durations.authorized) or 90
+local CONTROL_WINDOWS  = Config.ControlWindows or { police = { min = 3, max = 8 } }
+local ESX_MJ           = Config.Integration and Config.Integration.esx  and Config.Integration.esx.multijob  or {}
+local QBOX_MJ          = Config.Integration and Config.Integration.qbox and Config.Integration.qbox.multijob or {}
+local ALLOW_ESXLESS    = Config.Server and Config.Server.allowEsxlessTest or false
+local TARGETED_CAST    = Config.Server and Config.Server.targetedBroadcast or false
+local WEBHOOK_URL      = Config.Server and Config.Server.webhook or ''
 
+-- Durations (authoritative)
+local D_COUNTDOWN      = (Config.Durations and Config.Durations.countdown)  or 120
+local D_AUTH           = (Config.Durations and Config.Durations.authorized) or 90
+
+-- Convars can override durations (ops friendly)
+do
+  local cvCountdown = GetConvarInt('pt_countdown', -1)
+  local cvAuth      = GetConvarInt('pt_authorized', -1)
+  if cvCountdown and cvCountdown > 0 then D_COUNTDOWN = cvCountdown end
+  if cvAuth and cvAuth > 0 then D_AUTH = cvAuth end
+end
+
+-- Admin override clamp
+local OV_MIN = (Config.ServerOverrideClamp and Config.ServerOverrideClamp.min) or 10
+local OV_MAX = (Config.ServerOverrideClamp and Config.ServerOverrideClamp.max) or 600
+
+-- Viewer jobs (police only)
 local VIEWER_SET = {}
 do
   local list = (Config.Jobs and Config.Jobs.viewer) or {'police'}
   for _, name in ipairs(list) do VIEWER_SET[name] = true end
 end
-
-local ESX_MJ   = Config.Integration and Config.Integration.esx  and Config.Integration.esx.multijob  or {}
-local QBOX_MJ  = Config.Integration and Config.Integration.qbox and Config.Integration.qbox.multijob or {}
-local ALLOW_ESXLESS = Config.Server and Config.Server.allowEsxlessTest or false
 
 ---------------------------------------
 -- 2) FRAMEWORK ADAPTERS
@@ -78,11 +97,23 @@ local function esxCanControl(src)
   return g >= (win.min or 0) and g <= (win.max or 0)
 end
 
--- Qbox (qbx_core)
+-- Qbox / qb-core fallback
+local function qbCoreGetPrimaryJob(src)
+  if not QB_FALLBACK then return nil end
+  local ok, qb = pcall(function() return exports['qb-core']:GetCoreObject() end)
+  if not ok or not qb or not qb.Functions or not qb.Functions.GetPlayer then return nil end
+  local ply = qb.Functions.GetPlayer(src)
+  if not ply or not ply.PlayerData or not ply.PlayerData.job then return nil end
+  return ply.PlayerData.job
+end
+
 local function qboxGetPrimaryJob(src)
-  local qb = exports.qbx_core:GetPlayer(src)
-  if not qb or not qb.PlayerData or not qb.PlayerData.job then return nil end
-  return qb.PlayerData.job
+  if QBOX_READY then
+    local qb = exports.qbx_core:GetPlayer(src)
+    if qb and qb.PlayerData and qb.PlayerData.job then return qb.PlayerData.job end
+  end
+  -- fallback if user forced 'qbox' mode but only qb-core is present
+  return qbCoreGetPrimaryJob(src)
 end
 
 local function qboxIsViewer(src)
@@ -120,16 +151,16 @@ end
 ---------------------------------------
 -- 4) UI NOTIFY HELPER
 ---------------------------------------
-local function notify(src, msg)
+local function notify(src, msgKey)
+  local msg = L(msgKey)
   if GetResourceState('ox_lib') == 'started' then
-    -- If ox_lib client isn't present, this will no-op; we still send chat fallback.
     TriggerClientEvent('ox_lib:notify', src, { type = 'error', description = msg })
   end
   TriggerClientEvent('chat:addMessage', src, { args = { '^2[PIT Timer]', msg } })
 end
 
 ---------------------------------------
--- 5) STATE & TIME (MONOTONIC)
+-- 5) STATE & TIME (MONOTONIC) + GLOBALSTATE
 ---------------------------------------
 local running            = false
 local endsAtMs           = 0
@@ -139,19 +170,52 @@ local authorizedEndsMs   = 0
 local function nowMs() return GetGameTimer() end
 local function remainingSec() return math.max(0, math.floor((endsAtMs - nowMs()) / 1000)) end
 
+local function publishState()
+  GlobalState.PT = {
+    running          = running,
+    endsAtMs         = endsAtMs,
+    authorized       = authorizedActive,
+    authorizedEndsMs = authorizedEndsMs
+  }
+  slog(('publishState running=%s endsAt=%s auth=%s authEnds=%s')
+    :format(tostring(running), tostring(endsAtMs), tostring(authorizedActive), tostring(authorizedEndsMs)))
+end
+
 -- Broadcast helpers
+local function forEachViewerDo(cb)
+  if not cb then return end
+  for _, id in ipairs(GetPlayers()) do
+    id = tonumber(id)
+    if isViewer(id) then cb(id) end
+  end
+end
+
 local function bcastStart(seconds)
   seconds = math.max(0, math.floor(tonumber(seconds) or D_COUNTDOWN))
-  slog(('broadcast START -> %ds'):format(seconds))
-  TriggerClientEvent('pt:clientStart', -1, seconds)
+  slog(('broadcast START -> %ds (targeted=%s)'):format(seconds, tostring(TARGETED_CAST)))
+  if TARGETED_CAST then
+    forEachViewerDo(function(id) TriggerClientEvent('pt:clientStart', id, seconds) end)
+  else
+    TriggerClientEvent('pt:clientStart', -1, seconds)
+  end
 end
+
 local function bcastStop()
-  slog('broadcast STOP')
-  TriggerClientEvent('pt:clientStop', -1)
+  slog(('broadcast STOP (targeted=%s)'):format(tostring(TARGETED_CAST)))
+  if TARGETED_CAST then
+    forEachViewerDo(function(id) TriggerClientEvent('pt:clientStop', id) end)
+  else
+    TriggerClientEvent('pt:clientStop', -1)
+  end
 end
+
 local function bcastAuthorized()
-  slog('broadcast AUTHORIZED')
-  TriggerClientEvent('pt:clientAuthorized', -1)
+  slog(('broadcast AUTHORIZED (targeted=%s)'):format(tostring(TARGETED_CAST)))
+  if TARGETED_CAST then
+    forEachViewerDo(function(id) TriggerClientEvent('pt:clientAuthorized', id) end)
+  else
+    TriggerClientEvent('pt:clientAuthorized', -1)
+  end
 end
 
 ---------------------------------------
@@ -167,28 +231,40 @@ local function tooSoon(src, key, ms)
 end
 
 ---------------------------------------
--- 7) INTERNAL START/STOP (shared by events & exports)
+-- 7) DISCORD WEBHOOK
 ---------------------------------------
-local function StartPITInternal(actorSrc)
+local function postWebhook(msg)
+  if not WEBHOOK_URL or WEBHOOK_URL == '' then return end
+  PerformHttpRequest(WEBHOOK_URL, function() end, 'POST',
+    json.encode({ content = msg }),
+    { ['Content-Type'] = 'application/json' }
+  )
+end
+
+---------------------------------------
+-- 8) INTERNAL START/STOP (shared by events & exports)
+---------------------------------------
+local function StartPITInternal(actorSrc, overrideSeconds)
   -- If ESX path requires init, allow dev override only if configured
   if CORE_MODE == 'esx' and not initESX() then
     if ALLOW_ESXLESS then
       running = true; authorizedActive = false
       endsAtMs = nowMs() + (D_COUNTDOWN * 1000)
       authorizedEndsMs = 0
+      publishState()
       bcastStart(D_COUNTDOWN)
       return true
     else
-      if actorSrc and actorSrc > 0 then notify(actorSrc, 'ESX not initialized.') end
+      if actorSrc and actorSrc > 0 then notify(actorSrc, 'err_esx_not_inited') end
       return false
     end
   end
 
-  -- If actor is a player, enforce perms (if nil -> called by server/exports without actor; allow)
+  -- If actor is a player, enforce perms; allow nil actor (console/other script)
   if actorSrc and actorSrc > 0 then
     if tooSoon(actorSrc, 'start', 1000) then return false end
-    if not isViewer(actorSrc) then notify(actorSrc, 'You must be on-duty as Police.'); return false end
-    if not canControl(actorSrc) then notify(actorSrc, 'Insufficient grade to control the PIT timer.'); return false end
+    if not isViewer(actorSrc) then notify(actorSrc, 'err_must_be_on_duty'); return false end
+    if not canControl(actorSrc) then notify(actorSrc, 'err_insufficient');  return false end
   end
 
   if running then
@@ -196,11 +272,22 @@ local function StartPITInternal(actorSrc)
     return true
   end
 
+  -- Allow ACE override for custom seconds
+  local seconds = D_COUNTDOWN
+  if actorSrc and actorSrc > 0 and overrideSeconds and hasAce(actorSrc, 'pt.admin') then
+    seconds = math.max(OV_MIN, math.min(OV_MAX, math.floor(overrideSeconds)))
+  end
+
   running = true
   authorizedActive = false
-  endsAtMs = nowMs() + (D_COUNTDOWN * 1000)
+  endsAtMs = nowMs() + (seconds * 1000)
   authorizedEndsMs = 0
-  bcastStart(D_COUNTDOWN)
+  publishState()
+  bcastStart(seconds)
+
+  -- Audit trail
+  local who = (actorSrc and GetPlayerName(actorSrc)) or 'console/script'
+  postWebhook(('[PT] %s started PIT (%ds) [core=%s]'):format(who, seconds, CORE_MODE))
   return true
 end
 
@@ -208,34 +295,41 @@ local function StopPITInternal(actorSrc)
   if CORE_MODE == 'esx' and not initESX() then
     if ALLOW_ESXLESS then
       running = false; authorizedActive = false; endsAtMs = 0; authorizedEndsMs = 0
+      publishState()
       bcastStop()
       return true
     else
-      if actorSrc and actorSrc > 0 then notify(actorSrc, 'ESX not initialized.') end
+      if actorSrc and actorSrc > 0 then notify(actorSrc, 'err_esx_not_inited') end
       return false
     end
   end
 
   if actorSrc and actorSrc > 0 then
     if tooSoon(actorSrc, 'stop', 1000) then return false end
-    if not isViewer(actorSrc) then notify(actorSrc, 'You must be on-duty as Police.'); return false end
-    if not canControl(actorSrc) then notify(actorSrc, 'Insufficient grade to control the PIT timer.'); return false end
+    if not isViewer(actorSrc) then notify(actorSrc, 'err_must_be_on_duty'); return false end
+    if not canControl(actorSrc) then notify(actorSrc, 'err_insufficient');  return false end
   end
 
   running = false
   authorizedActive = false
   endsAtMs = 0
   authorizedEndsMs = 0
+  publishState()
   bcastStop()
+
+  local who = (actorSrc and GetPlayerName(actorSrc)) or 'console/script'
+  postWebhook(('[PT] %s stopped PIT [core=%s]'):format(who, CORE_MODE))
   return true
 end
 
 ---------------------------------------
--- 8) EVENTS
+-- 9) EVENTS
 ---------------------------------------
-
-RegisterNetEvent('pt:serverStart', function()
-  StartPITInternal(source)
+-- Client requests
+RegisterNetEvent('pt:serverStart', function(seconds)
+  local src = source
+  local sec = tonumber(seconds)
+  StartPITInternal(src, sec)  -- server clamps + ACE check
 end)
 
 RegisterNetEvent('pt:serverStop', function()
@@ -265,7 +359,7 @@ RegisterNetEvent('pt:requestState', function()
 end)
 
 ---------------------------------------
--- 9) WATCHDOG (monotonic)
+-- 10) WATCHDOG (monotonic)
 ---------------------------------------
 CreateThread(function()
   while true do
@@ -276,32 +370,39 @@ CreateThread(function()
       running = false
       authorizedActive = true
       authorizedEndsMs = t + (D_AUTH * 1000)
+      publishState()
       bcastAuthorized()
     end
 
     if authorizedActive and authorizedEndsMs > 0 and t >= authorizedEndsMs then
       authorizedActive = false
       authorizedEndsMs = 0
+      publishState()
       bcastStop()
     end
   end
 end)
 
 ---------------------------------------
--- 10) CLEAN SHUTDOWN
+-- 11) CLEAN SHUTDOWN
 ---------------------------------------
 AddEventHandler('onResourceStop', function(res)
   if res == GetCurrentResourceName() then
+    running = false
+    authorizedActive = false
+    endsAtMs = 0
+    authorizedEndsMs = 0
+    publishState()
     TriggerClientEvent('pt:clientStop', -1)
   end
 end)
 
 ---------------------------------------
--- 11) EXPORTS
+-- 12) EXPORTS
 ---------------------------------------
-exports('StartPIT', function(actorSrc)
+exports('StartPIT', function(actorSrc, seconds)
   -- actorSrc optional; when provided, same permission checks apply
-  return StartPITInternal(actorSrc)
+  return StartPITInternal(actorSrc, seconds)
 end)
 
 exports('StopPIT', function(actorSrc)
@@ -318,8 +419,10 @@ if CORE_MODE == 'esx' then
     if ESX_MJ.hardRequire and GetResourceState(mjName) ~= 'started' then
       print(('[pt] WARNING: %s not started (hardRequire=true) — PIT controls restricted.'):format(mjName))
     end
+    publishState() -- publish initial state once ESX is settled
   end)
 else
   local mjName = QBOX_MJ.resource or 'randol_multijob'
   print(('[pt] Qbox detected | %s=%s'):format(mjName, GetResourceState(mjName)))
+  publishState() -- publish early for Qbox path
 end
