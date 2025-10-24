@@ -1,7 +1,10 @@
+-- == PT Timer (Client) ==
+-- Supports ESX (active job via wasabi) and Qbox (primary job + onduty).
+
 Config = Config or {}
 
 ---------------------------------------
--- 0) CONFIG & DETECTION
+-- 0) CONFIG & RUNTIME
 ---------------------------------------
 local C           = Config.Client or {}
 local HUD         = C.hud or {}
@@ -15,20 +18,28 @@ local CMD_START   = (Config.Commands and Config.Commands.start) or 'startpit'
 local CMD_STOP    = (Config.Commands and Config.Commands.stop ) or 'stoppit'
 local CMD_PING    = (Config.Commands and Config.Commands.ping ) or 'ptping'
 
+-- Allow runtime debug via convar (client-side)
+CreateThread(function()
+  local cv = GetConvarInt and GetConvarInt('pt_debug', -1) or -1
+  if cv == 1 then
+    DEBUG = true
+    print('[pt:client] Debug enabled by convar pt_debug=1')
+  end
+end)
+
 local CORE_MODE   = (Config.Core or 'auto')
 local ESX_READY   = GetResourceState('es_extended') == 'started'
 local QBOX_READY  = GetResourceState('qbx_core') == 'started'
 
--- Resolve core mode
 if CORE_MODE == 'auto' then
   if QBOX_READY then CORE_MODE = 'qbox'
   elseif ESX_READY then CORE_MODE = 'esx'
-  else CORE_MODE = 'esx' end -- default fallback
+  else CORE_MODE = 'esx' end
 end
 
 local function log(msg) if DEBUG then print(('[pt:client][%s] %s'):format(CORE_MODE, msg)) end end
 
--- Viewer job set (single list for both frameworks)
+-- Job whitelist (viewer)
 local VIEWER_SET = {}
 do
   local list = (Config.Jobs and Config.Jobs.viewer) or {'police'}
@@ -39,26 +50,23 @@ end
 -- 1) FRAMEWORK ADAPTER (client)
 ---------------------------------------
 local ESX
-local QBCore -- Qbox is mostly QB-compatible on client events
+local QBCore -- if qb-core exists
 
--- State we track locally for Qbox
-local qbx_primaryJob = nil     -- string job name
-local qbx_gradeLevel = 0       -- numeric grade
-local qbx_onDuty     = false   -- boolean duty
+-- Qbox cached state
+local qbx_primaryJob = nil
+local qbx_gradeLevel = 0
+local qbx_onDuty     = false
 
 local function initESX()
   if ESX or CORE_MODE ~= 'esx' then return end
   local ok, obj = pcall(function() return exports['es_extended']:getSharedObject() end)
   if ok and obj then ESX = obj end
   if not ESX then
-    -- legacy event (rarely needed in recent ESX)
     TriggerEvent('esx:getSharedObject', function(o) ESX = o end)
   end
 end
 
--- ESX: wasabi_multijob sets the active ESX job when clocked-in/out,
--- looks at PlayerData.job
--- (matches your original logic)  :contentReference[oaicite:6]{index=6}
+-- ESX: active job (wasabi toggles this via clock in/out)
 local function esxIsViewerNow()
   if not ESX then return false end
   local pdata = ESX.GetPlayerData()
@@ -66,13 +74,9 @@ local function esxIsViewerNow()
   return job and VIEWER_SET[job.name] or false
 end
 
--- Qbox: honor on-duty for the *primary* job. Tracking primary job and duty
--- via Qbox client events documented: SetDuty + OnJobUpdate. :contentReference[oaicite:7]{index=7}
--- Primary job/grade are also available under PlayerData.job in qbx_core. :contentReference[oaicite:8]{index=8}
+-- Qbox: primary job + onduty + grade
 local function qboxIsViewerNow()
   if not qbx_primaryJob then
-    -- try to initialize from QBCore player data for compatibility
-    local getPD = nil
     if QBCore and QBCore.Functions and QBCore.Functions.GetPlayerData then
       local ok, pd = pcall(QBCore.Functions.GetPlayerData)
       if ok and type(pd) == 'table' and pd.job then
@@ -92,7 +96,7 @@ local viewer         = false
 local running        = false
 local remaining      = 0
 local authorizedText = false
-local timerSeq       = 0   -- cancel token; any new start/stop bumps this
+local timerSeq       = 0   -- cancellation token
 
 ---------------------------------------
 -- 3) DRAW HELPER
@@ -113,60 +117,60 @@ end
 -- 4) BOOTSTRAP
 ---------------------------------------
 CreateThread(function()
+  -- Chat suggestions (cheap UX)
+  TriggerEvent('chat:addSuggestion', '/' .. CMD_START, 'Start the PIT timer')
+  TriggerEvent('chat:addSuggestion', '/' .. CMD_STOP,  'Stop the PIT timer')
+
   if CORE_MODE == 'esx' then
     initESX()
-    -- Wait until ESX has loaded a job into PlayerData (wasabi sets this) :contentReference[oaicite:9]{index=9}
     while ESX and ESX.GetPlayerData().job == nil do Wait(100) end
     viewer = esxIsViewerNow()
   else
-    -- Qbox: best effort prime (supports QB-compatible GetPlayerData if present)
     if GetResourceState('qb-core') == 'started' then
       QBCore = exports['qb-core']:GetCoreObject()
     end
-    -- SetDuty/OnJobUpdate events populate the cached values
     viewer = qboxIsViewerNow()
   end
 
   TriggerServerEvent('pt:requestState')
 
-  -- Subscribe to job/duty changes per framework
+  -- ESX job change
   if CORE_MODE == 'esx' then
     AddEventHandler('esx:setJob', function()
       local newViewer = esxIsViewerNow()
       if newViewer ~= viewer then
         viewer = newViewer
         TriggerServerEvent('pt:requestState')
-        log('esx:setJob changed viewer state; resynced PIT state')
+        log('esx:setJob -> resync')
       end
     end)
   else
-    -- Qbox duty toggles (primary job) :contentReference[oaicite:10]{index=10}
+    -- Qbox duty + job updates
     RegisterNetEvent('QBCore:Client:SetDuty', function(onDuty)
-      qbox_onDuty = not not onDuty
+      qbx_onDuty = not not onDuty
       local newViewer = qboxIsViewerNow()
       if newViewer ~= viewer then
         viewer = newViewer
         TriggerServerEvent('pt:requestState')
-        log(('SetDuty -> onDuty=%s; resynced'):format(tostring(onDuty)))
+        log(('SetDuty=%s -> resync'):format(tostring(onDuty)))
       end
     end)
-    -- Qbox primary job changed :contentReference[oaicite:11]{index=11}
     RegisterNetEvent('QBCore:Client:OnJobUpdate', function(job)
       if type(job) == 'table' then
-        qbox_primaryJob = job.name
-        qbox_onDuty     = not not job.onduty
-        qbox_gradeLevel = (job.grade and (job.grade.level or job.grade)) or 0
+        qbx_primaryJob = job.name
+        qbx_onDuty     = not not job.onduty
+        qbx_gradeLevel = (job.grade and (job.grade.level or job.grade)) or 0
         local newViewer = qboxIsViewerNow()
         if newViewer ~= viewer then
           viewer = newViewer
           TriggerServerEvent('pt:requestState')
-          log(('OnJobUpdate -> %s (duty=%s, grade=%s)'):format(qbox_primaryJob, tostring(qbox_onDuty), tostring(qbox_gradeLevel)))
+          log(('OnJobUpdate %s (duty=%s, grade=%s)'):format(qbx_primaryJob, tostring(qbx_onDuty), tostring(qbx_gradeLevel)))
         end
       end
     end)
   end
 
-  -- Optional periodic poll :contentReference[oaicite:12]{index=12}
+  -- Safety poll
   if POLL_ON then
     CreateThread(function()
       while true do
@@ -175,7 +179,7 @@ CreateThread(function()
         if newViewer ~= viewer then
           viewer = newViewer
           TriggerServerEvent('pt:requestState')
-          log('Periodic poll changed viewer state; resynced PIT state')
+          log('Poll -> resync')
         end
       end
     end)
@@ -194,14 +198,14 @@ RegisterCommand(CMD_START, function()
 end, false)
 
 RegisterCommand(CMD_STOP, function()
-  timerSeq = timerSeq + 1
-  running = false; authorizedText = false; remaining = 0
+  -- IMPORTANT: do NOT clear local state here; wait for server broadcast.
   TriggerServerEvent('pt:serverStop')
 end, false)
 
 RegisterCommand(CMD_PING, function()
   TriggerServerEvent('ptping')
 end, false)
+
 RegisterNetEvent('pt:pong', function()
   if DEBUG then print('[pt:client] PONG (server responded)') end
 end)
@@ -218,7 +222,6 @@ RegisterNetEvent('pt:clientStart', function(duration)
   authorizedText = false
   remaining = math.max(0, tonumber(duration) or 0)
 
-  -- precise countdown via GetGameTimer to avoid drift
   local nextTick = GetGameTimer() + 1000
   CreateThread(function()
     while timerSeq == mySeq and running and remaining > 0 do
@@ -230,7 +233,6 @@ RegisterNetEvent('pt:clientStart', function(duration)
         Wait(50)
       end
     end
-    -- server will emit pt:clientAuthorized after expiry
   end)
 end)
 
@@ -249,14 +251,13 @@ RegisterNetEvent('pt:clientStop', function()
 end)
 
 ---------------------------------------
--- 7) ADAPTIVE RENDER LOOP
+-- 7) RENDER LOOP
 ---------------------------------------
 CreateThread(function()
   local cr = HUD.colorRunning    or {255,255,255,255}
   local ca = HUD.colorAuthorized or {  0,255,  0,255}
   while true do
     local active = viewer and ((running and remaining > 0) or authorizedText)
-
     if active then
       if running and remaining > 0 then
         local m = math.floor(remaining / 60)

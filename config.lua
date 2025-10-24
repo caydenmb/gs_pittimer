@@ -2,25 +2,25 @@ Config = {}
 
 ---------------------------------------------------------------------
 -- 0) Framework & Multijob Selection
---    Core: 'esx' | 'qbox' | 'auto'  (auto = detect by running resources)
+--    Core: 'esx' | 'qbox' | 'auto'  (auto = autodetect framework)
 ---------------------------------------------------------------------
 Config.Core = 'qbox'
 
--- Multijob resources to be *respected* (not directly called by this script,
--- but we can enforce presence when hardRequire=true)
+-- Integration knobs (we don't call these directly; we only enforce presence
+-- if you set hardRequire=true).
 Config.Integration = {
   esx = {
     multijob = {
       resource    = 'wasabi_multijob',
-      enabled     = false,      -- use wasabi’s active-job behavior
-      hardRequire = false       -- if true: refuse controls if resource not running
+      enabled     = false,
+      hardRequire = false
     }
   },
   qbox = {
     multijob = {
-      resource    = 'randol_multijob',  -- https://github.com/Randolio/randol_multijob/tree/qbox
+      resource    = 'randol_multijob',  -- qbox branch
       enabled     = true,
-      hardRequire = false      -- set true if you want to *require* randol to run
+      hardRequire = false
     }
   }
 }
@@ -28,42 +28,41 @@ Config.Integration = {
 ---------------------------------------------------------------------
 -- 1) Roles & Permissions
 ---------------------------------------------------------------------
--- Jobs that can SEE the HUD (must be on-duty/active per framework)
 Config.Jobs = {
-  viewer = { 'police' },
+  viewer = { 'police' }, -- who can SEE the HUD (must be on-duty/active)
 }
 
--- Grade window (inclusive) who can START/STOP (per job)
+-- Grade window (inclusive) for who can START/STOP
 Config.ControlWindows = {
-  police = { min = 3, max = 8 },  -- Sergeant..Commissioner (adjust to your role scale)
+  police = { min = 3, max = 8 },
 }
 
 ---------------------------------------------------------------------
--- 2) Timings (seconds)
+-- 2) Durations (seconds)
 ---------------------------------------------------------------------
 Config.Durations = {
-  countdown  = 120,  -- main PIT countdown
-  authorized = 60,   -- how long to show "Authorized" after countdown
+  countdown  = 120,
+  authorized = 90,
 }
 
 ---------------------------------------------------------------------
--- 3) Commands (without slash)
+-- 3) Commands
 ---------------------------------------------------------------------
 Config.Commands = {
   start = 'startpit',
   stop  = 'stoppit',
-  ping  = 'ptping',  -- debug helper
+  ping  = 'ptping',
 }
 
 ---------------------------------------------------------------------
 -- 4) Client HUD & Behavior
 ---------------------------------------------------------------------
 Config.Client = {
-  debug           = true,   -- F8 logging
-  idleSleepMs     = 1000,    -- sleep when HUD hidden
-  activeSleepMs   = 0,       -- sleep while drawing (0 = each frame)
-  pollEnabled     = true,    -- periodic job/duty safety poll
-  pollIntervalMs  = 300000,  -- 5 minutes
+  debug           = true,  -- F8 logging (can also toggle via convar: set pt_debug 1)
+  idleSleepMs     = 1000,
+  activeSleepMs   = 0,
+  pollEnabled     = true,
+  pollIntervalMs  = 300000, -- 5 minutes
 
   hud = {
     labelPrefix     = 'PIT Timer: ',
@@ -80,8 +79,9 @@ Config.Client = {
 }
 
 ---------------------------------------------------------------------
--- 5) Server Debug
+-- 5) Server Debug & Safety
 ---------------------------------------------------------------------
 Config.Server = {
-  debug = false,  -- prints [pt] traces to server console
+  debug = false,              -- server console logs (also toggle via: set pt_debug 1)
+  allowEsxlessTest = false,   -- if true: allow /startpit even if ESX not yet initted (dev only)
 }

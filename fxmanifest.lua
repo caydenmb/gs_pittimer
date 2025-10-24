@@ -4,9 +4,8 @@ game 'gta5'
 
 name 'PT'
 author 'Gingr Snaps'
-description 'On-screen PIT timer (ESX + Qbox)'
+description 'On-screen PIT timer with ESX + Qbox support'
 
--- Load config on both sides
 shared_script 'config.lua'
 
 client_scripts {
@@ -17,5 +16,4 @@ server_scripts {
   'server.lua'
 }
 
--- If using ESX path, you need es_extended + (optionally) wasabi_multijob.
--- If using Qbox path, you need qbx_core and (optionally) randol_multijob.
+-- This resource detects ESX or Qbox at runtime.
