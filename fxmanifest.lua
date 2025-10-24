@@ -4,9 +4,9 @@ game 'gta5'
 
 name 'PT'
 author 'Gingr Snaps'
-description 'On-screen PIT timer'
+description 'On-screen PIT timer (ESX + Qbox)'
 
--- Load config for both sides
+-- Load config on both sides
 shared_script 'config.lua'
 
 client_scripts {
@@ -17,7 +17,5 @@ server_scripts {
   'server.lua'
 }
 
-dependencies {
-  'es_extended'
-  -- wasabi_multijob is strongly recommended; set hardRequire=true in config if you want it mandatory
-}
+-- If using ESX path, you need es_extended + (optionally) wasabi_multijob.
+-- If using Qbox path, you need qbx_core and (optionally) randol_multijob.

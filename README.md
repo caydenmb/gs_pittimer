@@ -1,59 +1,73 @@
-# 🚓 PIT Timer (FiveM Script)
+# PT – PIT Timer (ESX & Qbox)
 
-A lightweight, optimized **PIT Maneuver Timer** script for **FiveM** with full **wasabi\_multijob** integration.
-Only **police** and **sheriff** officers **who are clocked in** can start or see the timer.
-
----
-
-## ✨ Features
-
-* **/startpit** – Starts a visible countdown for all on-duty Police & Sheriff officers.
-* **/stoppit** – Stops and removes the timer from all officers' screens.
-* **PIT Maneuver Authorized** message shows after countdown ends.
-* **Auto-close after 90 seconds** if not stopped manually.
-* **Job check every 5 minutes** – Ensures only on-duty police/sheriff see the timer.
-* Fully **optimized** for low resource usage.
+**What it is:** A simple on-screen PIT countdown for on-duty **police**.
 
 ---
 
-## 🔧 Customization (config.lua)
+## 1) Install (server.cfg)
+Put the folder in `resources` and add (only what you use):
+```cfg
+ensure es_extended            # ESX servers
+ensure wasabi_multijob        # (optional) ESX multijob
 
-You can easily edit these settings:
+ensure qbx_core               # Qbox servers
+ensure ox_lib                 # Qbox deps (randol uses ox_lib)
+ensure randol_multijob        # (optional) Qbox multijob (qbox branch)
 
-* **Authorized jobs** (`police`, `sheriff`)
-* **Minimum job grade** allowed to start the timer
-* **Countdown time** in seconds
-* **Authorized duration** (how long “PIT Maneuver Authorized” stays on screen before auto-closing)
-* **Text labels and colors**
-* **Command names** for starting/stopping the timer
+ensure PT                     # this resource
+````
 
----
-
-## 📦 Installation
-
-1. **Download & place** the script folder into your `resources` directory.
-2. Open your server.cfg and **add this line**:
-
-   ```cfg
-   ensure gs_pittimer
-   ```
-3. Make sure **wasabi\_multijob** is running before this script.
-4. Restart your server.
+> Qbox + randol users: make sure your usual qbox/randol multijob config is set up (duty toggles, primary job, etc).
 
 ---
 
-## 🕹 Commands
+## 2) Configure (`config.lua`) — minimal edits
 
-| Command     | Description                                                   |
-| ----------- | ------------------------------------------------------------- |
-| `/startpit` | Starts PIT timer (Police/Sheriff only, on duty, correct rank) |
-| `/stoppit`  | Stops PIT timer for all officers                              |
+```lua
+-- Pick your framework (or leave 'auto')
+Config.Core = 'qbox'      -- 'auto' | 'esx' | 'qbox'
+
+-- Multijob integration (optional). If you want to *require* the multijob
+-- resource to be running before /startpit works, set hardRequire = true.
+Config.Integration = {
+  esx = { multijob = { resource = 'wasabi_multijob', enabled = false, hardRequire = false } },
+  qbox = { multijob = { resource = 'randol_multijob', enabled = true, hardRequire = false } }
+}
+
+-- Who can see/control
+Config.Jobs = { viewer = { 'police' } }
+Config.ControlWindows = { police = { min = 3, max = 8 } }  -- grades allowed to start/stop
+
+-- Timings (seconds)
+Config.Durations = { countdown = 120, authorized = 90 }
+
+-- Commands
+Config.Commands = { start = 'startpit', stop = 'stoppit', ping = 'ptping' }
+
+-- Debug switches
+Config.Client = { debug = false }
+Config.Server = { debug = false }
+```
+
+**How “on-duty” is detected**
+
+* **ESX**: your *active* ESX job (wasabi clock-in/out sets it).
+* **Qbox**: `PlayerData.job.name == "police"` **and** `job.onduty == true` (primary job).
 
 ---
 
-## 📝 Notes
+## 3) Use In-Game
 
-* This script uses **wasabi\_multijob** callbacks to check if you’re clocked in as Police or Sheriff.
-* The timer **will not show** to civilians or off-duty officers.
+* `/startpit` – start countdown (only allowed police grades can run it)
+* `/stoppit`  – stop/clear
+* `/ptping`   – quick debug ping
 
-* If you forget to stop the PIT timer, it **auto-closes after 90 seconds** of authorization.
+Flow: countdown → “PIT Maneuver Authorized” for `authorized` seconds → auto-clear. New joins/duty changes auto-sync.
+
+---
+
+## 4) Quick Troubleshooting
+
+* **No HUD?** You must be **on-duty police** on your framework; verify `Config.Core` and that your framework resource is started.
+* **Can’t /startpit?** Check your **grade window** and whether you set `hardRequire=true` for a multijob that isn’t running.
+* **Still stuck?** Set `Config.Client.debug = true` and `Config.Server.debug = true`, run `/ptping`, and read console/F8 logs.

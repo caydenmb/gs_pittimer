@@ -1,76 +1,87 @@
 Config = {}
 
 ---------------------------------------------------------------------
--- 1) Integrations
+-- 0) Framework & Multijob Selection
+--    Core: 'esx' | 'qbox' | 'auto'  (auto = detect by running resources)
 ---------------------------------------------------------------------
+Config.Core = 'qbox'
+
+-- Multijob resources to be *respected* (not directly called by this script,
+-- but we can enforce presence when hardRequire=true)
 Config.Integration = {
-  wasabi = {
-    enabled = true,              -- Keep true. I use ESX active job set by wasabi.
-    resource = 'wasabi_multijob',
-    hardRequire = true,         -- true = refuse to run if wasabi is not started
-                                 -- false = still works with plain ESX if wasabi is missing
+  esx = {
+    multijob = {
+      resource    = 'wasabi_multijob',
+      enabled     = false,      -- use wasabi’s active-job behavior
+      hardRequire = false       -- if true: refuse controls if resource not running
+    }
+  },
+  qbox = {
+    multijob = {
+      resource    = 'randol_multijob',  -- https://github.com/Randolio/randol_multijob/tree/qbox
+      enabled     = true,
+      hardRequire = false      -- set true if you want to *require* randol to run
+    }
   }
 }
 
 ---------------------------------------------------------------------
--- 2) Roles & Permissions
+-- 1) Roles & Permissions
 ---------------------------------------------------------------------
--- Jobs that can SEE the HUD (must be clocked-in on these via wasabi)
+-- Jobs that can SEE the HUD (must be on-duty/active per framework)
 Config.Jobs = {
-  viewer = { 'police', 'sheriff' },
+  viewer = { 'police' },
 }
 
--- Grade windows (inclusive) who can START/STOP
--- Tip: adjust per your ranking scheme.
+-- Grade window (inclusive) who can START/STOP (per job)
 Config.ControlWindows = {
-  police  = { min = 3, max = 8 },    -- Sergeant .. Commissioner
-  sheriff = { min = 3, max = 6 },    -- Sergeant .. Commissioner
+  police = { min = 3, max = 8 },  -- Sergeant..Commissioner (adjust to your role scale)
 }
 
 ---------------------------------------------------------------------
--- 3) Timings (seconds)
+-- 2) Timings (seconds)
 ---------------------------------------------------------------------
 Config.Durations = {
-  countdown  = 120,   -- main PIT countdown
-  authorized = 90,    -- keep "PIT Maneuver Authorized" before auto-clear
+  countdown  = 120,  -- main PIT countdown
+  authorized = 60,   -- how long to show "Authorized" after countdown
 }
 
 ---------------------------------------------------------------------
--- 4) Commands (without the slash)
+-- 3) Commands (without slash)
 ---------------------------------------------------------------------
 Config.Commands = {
-  start = 'startpit',   -- /startpit
-  stop  = 'stoppit',    -- /stoppit
-  ping  = 'ptping',     -- /ptping (debug helper)
+  start = 'startpit',
+  stop  = 'stoppit',
+  ping  = 'ptping',  -- debug helper
 }
 
 ---------------------------------------------------------------------
--- 5) Client HUD & Performance
+-- 4) Client HUD & Behavior
 ---------------------------------------------------------------------
 Config.Client = {
-  debug           = false,     -- F8 logging
-  idleSleepMs     = 1000,       -- sleep when HUD hidden (higher = lighter)
-  activeSleepMs   = 0,         -- sleep while drawing (0 = every frame)
-  pollEnabled     = true,      -- periodic job-status re-check (safety net)
-  pollIntervalMs  = 300000,    -- 5 minutes
+  debug           = true,   -- F8 logging
+  idleSleepMs     = 1000,    -- sleep when HUD hidden
+  activeSleepMs   = 0,       -- sleep while drawing (0 = each frame)
+  pollEnabled     = true,    -- periodic job/duty safety poll
+  pollIntervalMs  = 300000,  -- 5 minutes
 
   hud = {
-    labelPrefix     = 'PIT Timer: ',           -- label in front of mm:ss
+    labelPrefix     = 'PIT Timer: ',
     authorizedText  = 'PIT Maneuver Authorized',
-    x               = 0.5,     -- 0.5 = centered horizontally
-    y               = 0.08,    -- closer to top = smaller number
-    scale           = 0.7,     -- 0.6–0.8 recommended
-    colorRunning    = {255,255,255,255},  -- RGBA while counting
-    colorAuthorized = {  0,255,  0,255},  -- RGBA when authorized
-    font            = 4,       -- GTA font index
-    outline         = true,    -- add outline
-    center          = true,    -- text centered horizontally
+    x               = 0.5,
+    y               = 0.08,
+    scale           = 0.7,
+    colorRunning    = {255,255,255,255},
+    colorAuthorized = {  0,255,  0,255},
+    font            = 4,
+    outline         = true,
+    center          = true,
   }
 }
 
 ---------------------------------------------------------------------
--- 6) Server Debug
+-- 5) Server Debug
 ---------------------------------------------------------------------
 Config.Server = {
-  debug = false,  -- server console debug logs
+  debug = false,  -- prints [pt] traces to server console
 }
