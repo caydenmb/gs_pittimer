@@ -39,7 +39,7 @@ Config.Jobs = { viewer = { 'police' } }                 -- who can SEE (on-duty 
 Config.ControlWindows = { police = { min=3, max=8 } }   -- who can START/STOP
 
 Config.Durations = { countdown=120, authorized=90 }     -- seconds
-Config.Commands  = { start='startpit', stop='stoppit', ping='ptping' }
+Config.Commands  = { start='startpit', stop='stoppit' }
 
 Config.Client = { debug=false }                         -- or set pt_debug 1
 Config.Server = { debug=false, allowEsxlessTest=false } -- dev shortcut for ESX init
@@ -83,4 +83,5 @@ exports.PT:StopPIT(source)
 * **Can’t start?** Check grade window and any `hardRequire` multijob setting.
 
 * **Logs:** set `pt_debug 1` (or flip `Config.Client/Server.debug = true`) and run `/ptping`.
+
 
