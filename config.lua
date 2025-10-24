@@ -4,7 +4,7 @@ Config = {}
 -- 0) Framework & Multijob Selection
 --    Core: 'esx' | 'qbox' | 'auto'  (auto = prefer qbox if found)
 ---------------------------------------------------------------------
-Config.Core = 'auto'
+Config.Core = 'qbox'
 
 -- Integration knobs (we don't call these directly; we only enforce presence
 -- if you set hardRequire=true).
@@ -84,3 +84,4 @@ Config.Server = {
   debug = false,              -- server console logs (also toggle via: set pt_debug 1)
   allowEsxlessTest = false,   -- if true: allow /startpit even if ESX not yet initted (dev only)
 }
+
