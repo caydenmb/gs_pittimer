@@ -14,14 +14,14 @@ ensure qbx_core               # Qbox servers
 ensure ox_lib                 # Qbox deps (randol uses ox_lib)
 ensure randol_multijob        # (optional) Qbox multijob (qbox branch)
 
-ensure PT                     # this resource
+ensure gs_pittimer                     # this resource
 ````
 
 > Qbox + randol users: make sure your usual qbox/randol multijob config is set up (duty toggles, primary job, etc).
 
 ---
 
-## 2) Configure (`config.lua`) — minimal edits
+## 2) Configure (`config.lua`)
 
 ```lua
 -- Pick your framework (or leave 'auto')
@@ -70,4 +70,5 @@ Flow: countdown → “PIT Maneuver Authorized” for `authorized` seconds → a
 
 * **No HUD?** You must be **on-duty police** on your framework; verify `Config.Core` and that your framework resource is started.
 * **Can’t /startpit?** Check your **grade window** and whether you set `hardRequire=true` for a multijob that isn’t running.
+
 * **Still stuck?** Set `Config.Client.debug = true` and `Config.Server.debug = true`, run `/ptping`, and read console/F8 logs.
