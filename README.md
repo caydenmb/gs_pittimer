@@ -1,4 +1,4 @@
-# PT – PIT Timer (ESX & Qbox) — Simple README
+# PT – PIT Timer (ESX & Qbox)
 
 On-screen PIT countdown for **on-duty police**  
 Works on **ESX** (active job via wasabi) and **Qbox** (primary job + onduty + grade).
@@ -124,4 +124,5 @@ exports.PT:StopPIT(source)
 
 * **No HUD?** You must be **on-duty police**; check framework started and `Config.Core`.
 * **Can’t start?** Check grade window and any `hardRequire` multijob setting.
+
 * **Logs:** `set pt_debug 1` (or set `Config.Client/Server.debug = true`).
