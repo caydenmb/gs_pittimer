@@ -56,7 +56,6 @@ Config.Server = { debug=false, allowEsxlessTest=false } -- dev shortcut for ESX 
 
 * `/startpit` – start the countdown (allowed police grades only)
 * `/stoppit`  – stop/clear
-* `/ptping`   – debug ping
 
 Flow: **countdown → “PIT Maneuver Authorized” → auto-clear**.
 Joins/duty changes auto-sync. Timers are monotonic (no drift from system clock).
@@ -84,3 +83,4 @@ exports.PT:StopPIT(source)
 * **Can’t start?** Check grade window and any `hardRequire` multijob setting.
 
 * **Logs:** set `pt_debug 1` (or flip `Config.Client/Server.debug = true`) and run `/ptping`.
+
