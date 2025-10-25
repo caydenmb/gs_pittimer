@@ -17,8 +17,8 @@ Config.Integration = {
   esx = {
     multijob = {
       resource    = 'wasabi_multijob',
-      enabled     = true,
-      hardRequire = true
+      enabled     = false,
+      hardRequire = false
     }
   },
   qbox = {
@@ -104,3 +104,4 @@ Config.Server = {
   targetedBroadcast   = false,            -- if true: broadcast only to viewers instead of -1
   webhook             = '',               -- Discord webhook for audit trail (leave '' to disable)
 }
+
